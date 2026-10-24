@@ -2,10 +2,8 @@ module github.com/Dem1241/difftest
 
 go 1.27.3
 
-replace github.com/dolthub/go-mysql-server => ../oss/gms-mine
-
 require (
-	github.com/dolthub/go-mysql-server v0.0.0
+	github.com/dolthub/go-mysql-server v0.20.1-0.20261024000501-c22d4b6df50c
 	github.com/go-sql-driver/mysql v1.10.1
 )
 
