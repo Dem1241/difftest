@@ -1,5 +1,5 @@
-// difftest runs randomly generated queries against go-mysql-server and a real
-// MySQL server and reports every query whose results differ.
+// difftest runs randomly generated queries against go-mysql-server or dolt and
+// a real MySQL server and reports every query whose results differ.
 package main
 
 import (
@@ -49,16 +49,21 @@ var setup = []string{
 
 func main() {
 	mysqlDSN := flag.String("mysql", "root@unix(/tmp/mysql.sock)/", "DSN of the MySQL server to compare against")
+	doltDSN := flag.String("dolt", "", "DSN of a running dolt sql-server to test instead of the in-process go-mysql-server")
 	port := flag.Int("port", 33070, "port for the go-mysql-server instance")
 	n := flag.Int("n", 1000, "number of queries to run")
 	seed := flag.Int64("seed", time.Now().UnixNano(), "random seed")
 	out := flag.String("out", "diffs.txt", "file to write differences to")
 	flag.Parse()
 
-	if err := startGMS(*port); err != nil {
-		fail(err)
+	name, dsn := "dolt", *doltDSN
+	if dsn == "" {
+		name, dsn = "gms", fmt.Sprintf("root@tcp(127.0.0.1:%d)/", *port)
+		if err := startGMS(*port); err != nil {
+			fail(err)
+		}
 	}
-	gms, err := connect(fmt.Sprintf("root@tcp(127.0.0.1:%d)/", *port))
+	engine, err := connect(dsn)
 	if err != nil {
 		fail(err)
 	}
@@ -66,7 +71,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	for _, db := range []*gosql.DB{gms, my} {
+	for _, db := range []*gosql.DB{engine, my} {
 		if err := load(db); err != nil {
 			fail(err)
 		}
@@ -83,14 +88,14 @@ func main() {
 	counts := map[string]int{}
 	for i := 0; i < *n; i++ {
 		q := genQuery(rng)
-		gRes := run(gms, q)
+		eRes := run(engine, q)
 		mRes := run(my, q)
-		kind := compare(gRes, mRes)
+		kind := compare(name, eRes, mRes)
 		counts[kind]++
 		if kind == "same" || kind == "both-error" {
 			continue
 		}
-		fmt.Fprintf(f, "### %s\n%s;\n-- gms:   %s\n-- mysql: %s\n\n", kind, q, gRes, mRes)
+		fmt.Fprintf(f, "### %s\n%s;\n-- %s: %s\n-- mysql: %s\n\n", kind, q, name, eRes, mRes)
 	}
 	fmt.Println(counts)
 }
@@ -220,16 +225,16 @@ func normalize(s string) string {
 	return strconv.FormatFloat(f, 'g', 15, 64)
 }
 
-func compare(g, m result) string {
+func compare(name string, g, m result) string {
 	switch {
 	case g.err != "" && m.err != "":
 		return "both-error"
 	case g.err != "":
 		lower := strings.ToLower(g.err)
 		if strings.Contains(lower, "not supported") || strings.Contains(lower, "unsupported") || strings.Contains(lower, "not yet implemented") || strings.Contains(lower, "syntax error") {
-			return "gms-unsupported"
+			return name + "-unsupported"
 		}
-		return "gms-error"
+		return name + "-error"
 	case m.err != "":
 		return "mysql-error"
 	case strings.Join(g.rows, "|") != strings.Join(m.rows, "|"):

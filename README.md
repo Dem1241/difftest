@@ -22,6 +22,15 @@ it starts go-mysql-server in-process on port 33070 (`-port`), creates a `difftes
 - `gms-unsupported`: go-mysql-server doesn't support the syntax
 - `both-error`: both failed
 
+## testing dolt
+
+some mysql behavior lives in dolt rather than go-mysql-server. to test a running `dolt sql-server` instead of the in-process engine, pass its DSN. the `gms-` outcomes become `dolt-`.
+
+```sh
+dolt sql-server -H 127.0.0.1 -P 33071
+./difftest -dolt 'root@tcp(127.0.0.1:33071)/' -mysql 'root@unix(/path/to/mysql.sock)/' -n 3000 -seed 1 -out diffs.txt
+```
+
 ## how it avoids false positives
 
 - the database uses `utf8mb4_0900_bin` on both sides. that's the go-mysql-server default, and mysql's default collation is case insensitive, which otherwise shows up as a difference in every `GROUP BY` or `PARTITION BY` on a string.
